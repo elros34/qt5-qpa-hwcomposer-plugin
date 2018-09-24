@@ -86,6 +86,7 @@ class QWindow;
 class HwComposerContent_v11;
 
 class HwComposerBackend_v11 : public QObject, public HwComposerBackend {
+    Q_OBJECT
 public:
     HwComposerBackend_v11(hw_module_t *hwc_module, hw_device_t *hw_device, void *libminisf, int num_displays);
     virtual ~HwComposerBackend_v11();
@@ -125,6 +126,9 @@ private:
     int width;
     int height;
     HwComposerContent_v11 *content;
+
+private slots:
+    void handleVSYNC();
 };
 
 #endif /* HWC_PLUGIN_HAVE_HWCOMPOSER1_API */
