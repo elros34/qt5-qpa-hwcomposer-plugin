@@ -46,9 +46,12 @@
 #include <QtCore/QElapsedTimer>
 #include <QtCore/QTimerEvent>
 #include <QtCore/QCoreApplication>
+#include <QtCore/QTimer>
+#include <QtCore/QSocketNotifier>
 #include <private/qwindow_p.h>
 
 #include <private/qsystrace_p.h>
+#include <fcntl.h>
 
 #ifdef HWC_PLUGIN_HAVE_HWCOMPOSER1_API
 
@@ -182,6 +185,8 @@ HwComposerBackend_v11::HwComposerBackend_v11(hw_module_t *hwc_module, hw_device_
 
     hwc_device->registerProcs(hwc_device, procs);
 
+    QTimer::singleShot(0, this, SLOT(handleVSYNC()));
+
     hwc_version = interpreted_version(hw_device);
     sleepDisplay(false);
 }
@@ -203,6 +208,27 @@ HwComposerBackend_v11::~HwComposerBackend_v11()
     }
 
     delete procs;
+}
+
+void HwComposerBackend_v11::handleVSYNC()
+{
+    // hwcomposer.sun6i.so use udev events for vsync so convert kobject_uevent to sysfs_notify in kernel and handle it here
+    // It greatly reduce cpu usage
+    const int vsyncFd = open("/sys/devices/platform/disp/vsync0_time", O_RDONLY | O_NONBLOCK);
+    if (vsyncFd > 0) {
+        QSocketNotifier *socketNotifier = new QSocketNotifier(vsyncFd, QSocketNotifier::Exception, this);
+        socketNotifier->setEnabled(true);
+        connect(socketNotifier, &QSocketNotifier::activated, socketNotifier, [this, vsyncFd, socketNotifier] () {
+            socketNotifier->setEnabled(false);
+            char buf[4096*2] = {0};
+            lseek(vsyncFd, 0, SEEK_SET);
+            while (read(vsyncFd, buf, sizeof(buf)) > 0) {
+                //uint64_t timestamp = strtoull(buf, NULL, 0);
+                procs->vsync(procs, 0, 0);
+            }
+            socketNotifier->setEnabled(true);
+        });
+    }
 }
 
 EGLNativeDisplayType

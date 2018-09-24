@@ -18,8 +18,8 @@ HEADERS += hwcomposer_screeninfo.h
 SOURCES += hwcomposer_backend.cpp
 HEADERS += hwcomposer_backend.h
 
-SOURCES += hwcomposer_backend_v0.cpp
-HEADERS += hwcomposer_backend_v0.h
+#SOURCES += hwcomposer_backend_v0.cpp
+#HEADERS += hwcomposer_backend_v0.h
 
 SOURCES += hwcomposer_backend_v10.cpp
 HEADERS += hwcomposer_backend_v10.h

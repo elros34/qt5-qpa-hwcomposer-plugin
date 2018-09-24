@@ -55,6 +55,7 @@ class HwcProcs_v11;
 class QWindow;
 
 class HwComposerBackend_v11 : public QObject, public HwComposerBackend {
+    Q_OBJECT
 public:
     HwComposerBackend_v11(hw_module_t *hwc_module, hw_device_t *hw_device, void *libminisf, int num_displays);
     virtual ~HwComposerBackend_v11();
@@ -84,6 +85,9 @@ private:
     QBasicTimer m_vsyncTimeout;
     QSet<QWindow *> m_pendingUpdate;
     HwcProcs_v11 *procs;
+
+private slots:
+    void handleVSYNC();
 };
 
 #endif /* HWC_PLUGIN_HAVE_HWCOMPOSER1_API */
