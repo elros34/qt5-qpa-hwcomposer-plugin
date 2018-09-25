@@ -51,8 +51,39 @@
 
 #include <QBasicTimer>
 
+// Helper class that takes care of waiting on and closing a set
+// of file descriptors
+class RetireFencePool {
+public:
+    RetireFencePool()
+        : m_fds()
+    {
+    }
+
+    ~RetireFencePool()
+    {
+        for (auto fd: m_fds) {
+            fprintf(stderr, "Waiting and closing retire fence fd: %d\n", fd);
+            sync_wait(fd, -1);
+            close(fd);
+        }
+    }
+
+    void consume(int &fd)
+    {
+        if (fd != -1) {
+            m_fds.push_back(fd);
+            fd = -1;
+        }
+    }
+
+private:
+    std::vector<int> m_fds;
+};
+
 class HwcProcs_v11;
 class QWindow;
+class HwComposerContent_v11;
 
 class HwComposerBackend_v11 : public QObject, public HwComposerBackend {
 public:
@@ -63,6 +94,7 @@ public:
     virtual EGLNativeWindowType createWindow(int width, int height);
     virtual void destroyWindow(EGLNativeWindowType window);
     virtual void swap(EGLNativeDisplayType display, EGLSurface surface);
+    virtual void blankDisplay(int display, bool blank);
     virtual void sleepDisplay(bool sleep);
     virtual float refreshRate();
 
@@ -71,6 +103,9 @@ public:
     void timerEvent(QTimerEvent *) Q_DECL_OVERRIDE;
     void handleVSyncEvent();
     bool event(QEvent *e) Q_DECL_OVERRIDE;
+
+    // Present method that does the buffer swapping, returns the releaseFenceFd
+    int present(RetireFencePool *pool, buffer_handle_t handle, int acquireFenceFd);
 
 private:
     hwc_composer_device_1_t *hwc_device;
@@ -84,6 +119,10 @@ private:
     QBasicTimer m_vsyncTimeout;
     QSet<QWindow *> m_pendingUpdate;
     HwcProcs_v11 *procs;
+
+    int width;
+    int height;
+    HwComposerContent_v11 *content;
 };
 
 #endif /* HWC_PLUGIN_HAVE_HWCOMPOSER1_API */
