@@ -544,6 +544,12 @@ HwComposerBackend_v11::createWindow(int width, int height)
     HWC_PLUGIN_EXPECT_NULL(hwc_list);
     HWC_PLUGIN_EXPECT_NULL(hwc_mList);
 
+    char* env = getenv("HYBRIS_HAL_TRANSFORM_ROT");
+    if (env) {
+        uint transform_rot = atoi(env);
+        if (transform_rot == HAL_TRANSFORM_ROT_90 || transform_rot == HAL_TRANSFORM_ROT_270)
+            qSwap(width, height);
+    }
 
     this->width = width;
     this->height = height;
