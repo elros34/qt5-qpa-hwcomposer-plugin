@@ -219,6 +219,16 @@ HwComposerBackend_v11::createWindow(int width, int height)
     HWC_PLUGIN_EXPECT_NULL(hwc_list);
     HWC_PLUGIN_EXPECT_NULL(hwc_mList);
 
+    char* env = getenv("HYBRIS_HAL_TRANSFORM_ROT");
+    if (env) {
+        uint transform_rot = atoi(env);
+        if (transform_rot == HAL_TRANSFORM_ROT_90 || transform_rot == HAL_TRANSFORM_ROT_270) {
+            int _width = width;
+            width = height;
+            height = _width;
+        }
+    }
+
     size_t neededsize = sizeof(hwc_display_contents_1_t) + 2 * sizeof(hwc_layer_1_t);
     hwc_list = (hwc_display_contents_1_t *) malloc(neededsize);
     hwc_mList = (hwc_display_contents_1_t **) malloc(num_displays * sizeof(hwc_display_contents_1_t *));
