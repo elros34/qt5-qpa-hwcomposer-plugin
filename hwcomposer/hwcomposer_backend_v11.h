@@ -55,16 +55,18 @@
 // of file descriptors
 class RetireFencePool {
 public:
-    RetireFencePool()
-        : m_fds()
+    RetireFencePool(const bool wait) :
+        m_fds(),
+        m_wait(wait)
     {
     }
 
     ~RetireFencePool()
     {
         for (auto fd: m_fds) {
-            fprintf(stderr, "Waiting and closing retire fence fd: %d\n", fd);
-            sync_wait(fd, -1);
+            //fprintf(stderr, "Waiting and closing retire fence fd: %d\n", fd);
+            if (m_wait)
+                sync_wait(fd, -1);
             close(fd);
         }
     }
@@ -79,6 +81,7 @@ public:
 
 private:
     std::vector<int> m_fds;
+    bool m_wait;
 };
 
 class HwcProcs_v11;
@@ -109,11 +112,10 @@ public:
     // Present method that does the buffer swapping, returns the releaseFenceFd
     int present(RetireFencePool *pool, buffer_handle_t handle, int acquireFenceFd);
 
+    bool geometryChanged;
 private:
     int getSingleAttribute(uint32_t attribute);
     hwc_composer_device_1_t *hwc_device;
-    hwc_display_contents_1_t *hwc_list;
-    hwc_display_contents_1_t **hwc_mList;
     uint32_t hwc_version;
     int num_displays;
 

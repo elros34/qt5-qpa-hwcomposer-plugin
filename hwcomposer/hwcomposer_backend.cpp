@@ -166,7 +166,7 @@ HwComposerBackend::create()
 #endif
             // HWC_NUM_DISPLAY_TYPES is the actual size of the array, otherwise
             // underrun/overruns happen
-            return new HwComposerBackend_v11(hwc_module, hwc_device, libminisf, HWC_NUM_DISPLAY_TYPES);
+            return new HwComposerBackend_v11(hwc_module, hwc_device, libminisf, HWC_NUM_PHYSICAL_DISPLAY_TYPES);
             break;
 #endif /* HWC_PLUGIN_HAVE_HWCOMPOSER1_API */
 #ifdef HWC_PLUGIN_HAVE_HWCOMPOSER2_API

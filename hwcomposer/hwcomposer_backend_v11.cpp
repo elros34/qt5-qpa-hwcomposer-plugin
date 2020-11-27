@@ -78,7 +78,7 @@ struct HwcProcs_v11 : public hwc_procs
     HwComposerBackend_v11 *backend;
 };
 
-static void hwc11_callback_vsync(const struct hwc_procs *procs, int, int64_t)
+static void hwc11_callback_vsync(const struct hwc_procs *procs, int disp, int64_t)
 {
     static int counter = 0;
     ++counter;
@@ -87,16 +87,20 @@ static void hwc11_callback_vsync(const struct hwc_procs *procs, int, int64_t)
     else
         QSystrace::end("graphics", "QPA::vsync", "");
 
+    if (disp != 0)
+        qDebug() << __func__ << " disp: " << disp;
+
     QCoreApplication::postEvent(static_cast<const HwcProcs_v11 *>(procs)->backend, new QEvent(QEvent::User));
 }
 
 static void hwc11_callback_invalidate(const struct hwc_procs *)
 {
+    qDebug() << __func__;
 }
 
 static void hwc11_callback_hotplug(const struct hwc_procs *procs, int disp, int connected)
 {
-    fprintf(stderr, "%s: procs=%x, disp=%d, connected=%d\n", __func__, procs, disp, connected);
+    fprintf(stderr, "%s: procs=%p, disp=%d, connected=%d\n", __func__, (void*)procs, disp, connected);
     if (disp == HWC_DISPLAY_EXTERNAL) {
         g_external_connected_next = connected;
     }
@@ -113,7 +117,6 @@ public:
         int bufferCount = qBound(2, qgetenv("QPA_HWC_BUFFER_COUNT").toInt(), 8);
         setBufferCount(bufferCount);
         m_syncBeforeSet = qEnvironmentVariableIsSet("QPA_HWC_SYNC_BEFORE_SET");
-        // TODO
         m_waitOnRetireFence = qEnvironmentVariableIsSet("QPA_HWC_WAIT_ON_RETIRE_FENCE");
     }
 
@@ -124,7 +127,7 @@ protected:
 
         QPA_HWC_TIMING_SAMPLE(presentTime);
 
-        RetireFencePool pool;
+        RetireFencePool pool(m_waitOnRetireFence);
 
         // Obtain a new acquire fence to be used, then also
         // set the new release fence with the return value
@@ -141,6 +144,8 @@ protected:
         }
         fence = backend->present(&pool, buffer->handle, fence);
         setFenceBufferFd(buffer, fence);
+
+        backend->geometryChanged = false;
 
         // Retire fence pool will wait on and close all FDs consumed here
     }
@@ -169,7 +174,7 @@ get_screen_size(hwc_composer_device_1_t *hwc_device, int id, int *width, int *he
         };
 
         hwc_device->getDisplayAttributes(hwc_device, id, config, attrs, values);
-        //fprintf(stderr, "Display %d size: %dx%d\n", id, values[0], values[1]);
+        fprintf(stderr, "Display %d size: %dx%d\n", id, values[0], values[1]);
         *width = values[0];
         *height = values[1];
     } else {
@@ -228,6 +233,7 @@ public:
         , id(id)
         , hwc_list(nullptr)
     {
+        qDebug() << "init screen: " << id;
         size_t needed_size = sizeof(hwc_display_contents_1_t) +
             HWC_SCREEN_REQUIRED_LAYERS * sizeof(hwc_layer_1_t);
 
@@ -242,8 +248,9 @@ public:
 #endif
     }
 
-    bool relayout(int width, int height)
+    void relayout(int width, int height)
     {
+        qDebug() << "relayout, screen: " << id;
         // Source rectangle of the desktop
         const hwc_rect_t source_rect = {
             0, 0, width, height
@@ -269,10 +276,10 @@ public:
         layer->transform = 0;
         layer->blending = HWC_BLENDING_NONE;
     #ifdef HWC_DEVICE_API_VERSION_1_3
-        layer->sourceCropf.top = 0.0f;
         layer->sourceCropf.left = 0.0f;
-        layer->sourceCropf.bottom = (float) height;
+        layer->sourceCropf.top = 0.0f;
         layer->sourceCropf.right = (float) width;
+        layer->sourceCropf.bottom = (float) height;
     #else
         layer->sourceCrop = source_rect;
     #endif
@@ -287,7 +294,7 @@ public:
         // glitches and warnings in logcat. By setting the planarAlpha to non-
         // opaque, we attempt to force the HWC into using HWC_FRAMEBUFFER for this
         // layer so the HWC_FRAMEBUFFER_TARGET layer actually gets used.
-        static const bool tryToForceGLES = qEnvironmentVariableIsSet("QPA_HWC_FORCE_GLES");
+        static bool tryToForceGLES = qEnvironmentVariableIsSet("QPA_HWC_FORCE_GLES");
         layer->planeAlpha = tryToForceGLES ? 1 : 255;
     #endif
     #ifdef HWC_DEVICE_API_VERSION_1_5
@@ -304,10 +311,10 @@ public:
         layer->transform = (ww > hh) ? HWC_TRANSFORM_ROT_270 : 0; // FIXME: be more intelligent than "ww > hh"
         layer->blending = HWC_BLENDING_NONE;
     #ifdef HWC_DEVICE_API_VERSION_1_3
-        layer->sourceCropf.top = 0.0f;
         layer->sourceCropf.left = 0.0f;
-        layer->sourceCropf.bottom = (float) height;
+        layer->sourceCropf.top = 0.0f;
         layer->sourceCropf.right = (float) width;
+        layer->sourceCropf.bottom = (float) height;
     #else
         layer->sourceCrop = source_rect;
     #endif
@@ -322,9 +329,6 @@ public:
     #ifdef HWC_DEVICE_API_VERSION_1_5
         layer->surfaceDamage.numRects = 0;
     #endif
-
-        // For now, we always return true (=geometry has changed)
-        return true;
     }
 
     ~HwComposerScreen_v11()
@@ -430,7 +434,7 @@ public:
         : hwc_device(hwc_device)
         , num_displays(num_displays)
         , screens()
-        , contents((hwc_display_contents_1_t **)calloc(num_displays,
+        , contents((hwc_display_contents_1_t **)calloc(HWC_NUM_DISPLAY_TYPES,
                     sizeof(hwc_display_contents_1_t *)))
     {
         for (int i=0; i<num_displays; i++) {
@@ -449,8 +453,8 @@ public:
 
     void prepare(buffer_handle_t handle, int acquireFenceFd, int width, int height, bool geometryChanged) {
         for (auto &screen: screens) {
-            if (screen->relayout(width, height)) {
-                geometryChanged = true;
+            if (geometryChanged) {
+                screen->relayout(width, height);
             }
 
             screen->prepare(handle, acquireFenceFd, geometryChanged);
@@ -490,9 +494,8 @@ private:
 
 HwComposerBackend_v11::HwComposerBackend_v11(hw_module_t *hwc_module, hw_device_t *hw_device, void *libminisf, int num_displays)
     : HwComposerBackend(hwc_module, libminisf)
+    , geometryChanged(true)
     , hwc_device((hwc_composer_device_1_t *)hw_device)
-    , hwc_list(NULL)
-    , hwc_mList(NULL)
     , num_displays(num_displays)
     , m_displayOff(true)
     , width(0)
@@ -523,14 +526,6 @@ HwComposerBackend_v11::~HwComposerBackend_v11()
     // Close the hwcomposer handle
     if (!qgetenv("QPA_HWC_WORKAROUNDS").split(',').contains("no-close-hwc"))
         HWC_PLUGIN_EXPECT_ZERO(hwc_close_1(hwc_device));
-
-    if (hwc_mList != NULL) {
-        free(hwc_mList);
-    }
-
-    if (hwc_list != NULL) {
-        free(hwc_list);
-    }
 
     delete procs;
 }
@@ -563,8 +558,6 @@ HwComposerBackend_v11::createWindow(int width, int height)
 {
     // We expect that we haven't created a window already, if we had, we
     // would leak stuff, and we want to avoid that for obvious reasons.
-    HWC_PLUGIN_EXPECT_NULL(hwc_list);
-    HWC_PLUGIN_EXPECT_NULL(hwc_mList);
 
     char* env = getenv("HYBRIS_HAL_TRANSFORM_ROT");
     if (env) {
@@ -616,10 +609,6 @@ HwComposerBackend_v11::swap(EGLNativeDisplayType display, EGLSurface surface)
 int
 HwComposerBackend_v11::present(RetireFencePool *pool, buffer_handle_t handle, int acquireFenceFd)
 {
-    // Always force geometry change for now, later on
-    // only do that on unblank/blank and attach/detach
-    bool geometryChanged = true;
-
     content->prepare(handle, acquireFenceFd, width, height, geometryChanged);
 
     auto display_list = content->get();
@@ -666,7 +655,7 @@ void
 HwComposerBackend_v11::sleepDisplay(bool sleep)
 {
     // XXX: For debugging only
-    //dump_attributes(hwc_device, num_displays);
+    dump_attributes(hwc_device, num_displays);
 
     m_displayOff = sleep;
     if (sleep) {
@@ -676,11 +665,16 @@ HwComposerBackend_v11::sleepDisplay(bool sleep)
         m_vsyncTimeout.stop();
         hwc_device->eventControl(hwc_device, 0, HWC_EVENT_VSYNC, 0);
 
-        for (int i=0; i<num_displays; i++) {
-            if (g_unblanked_displays[i]) {
-                blankDisplay(i, true);
+        if (g_external_connected) {
+//            fprintf(stderr, "Blanking only internal display\n");
+//            blankDisplay(0, true);
+        } else {
+            for (int i=0; i<num_displays; i++) {
+                if (g_unblanked_displays[i])
+                    blankDisplay(i, true);
             }
         }
+
     } else {
 #if 0
         for (int i=0; i<num_displays; i++) {
@@ -703,14 +697,13 @@ HwComposerBackend_v11::sleepDisplay(bool sleep)
             blankDisplay(0, false);
         }
 
-
-        if (hwc_list) {
-            hwc_list->flags |= HWC_GEOMETRY_CHANGED;
-        }
+        geometryChanged = true;
 
         // If we have pending updates, make sure those start happening now..
         if (m_pendingUpdate.size()) {
             hwc_device->eventControl(hwc_device, 0, HWC_EVENT_VSYNC, 1);
+            //Unblanking internal display
+            //FIXME: QBasicTimer::start: Timers cannot be started from another thread
             m_vsyncTimeout.start(50, this);
         }
     }
@@ -812,8 +805,9 @@ bool HwComposerBackend_v11::event(QEvent *e)
 {
     if (e->type() == QEvent::User) {
         static int idleTime = qBound(5, qgetenv("QPA_HWC_IDLE_TIME").toInt(), 100);
-        if (!m_deliverUpdateTimeout.isActive())
+        if (!m_deliverUpdateTimeout.isActive()){
             m_deliverUpdateTimeout.start(idleTime, this);
+        }
         return true;
     }
     return QObject::event(e);
