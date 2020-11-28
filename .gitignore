@@ -1,0 +1,12 @@
+.moc
+.obj
+Makefile*
+RPMS
+*.list
+*.pro.user*
+*.so
+*.cmake
+.qmake.cache
+*.log
+hwcomposer/mkspecs/
+build*
